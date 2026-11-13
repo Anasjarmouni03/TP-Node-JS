@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <title>Journal des posts</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; color: #192a23; background: #f4f6f2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #143e31; color: #fff; padding: 2.4rem 1.25rem; }
+    .wrap { max-width: 70rem; margin: auto; }
+    .label { margin: 0 0 .3rem; color: #b7e0ca; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; letter-spacing: -.045em; }
+    header p:last-child { color: #d4e8dc; margin-top: .65rem; }
+    main { padding: 1.5rem 1.25rem 3rem; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(17rem, 23rem); gap: 1.25rem; align-items: start; }
+    .panel, article { background: #fff; border: 1px solid #dbe3dc; border-radius: .85rem; padding: 1.15rem; }
+    h2 { font-size: 1.25rem; letter-spacing: -.02em; }
+    h3 { font-size: 1.03rem; overflow-wrap: anywhere; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: .35rem 1rem; align-items: baseline; justify-content: space-between; }
+    .muted, .meta { color: #51675c; font-size: .88rem; }
+    #posts { display: grid; gap: .75rem; margin-top: .85rem; }
+    .meta { margin-bottom: .25rem; }
+    .post-body { margin-top: .35rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+    label { display: grid; gap: .25rem; margin-top: .85rem; font-size: .92rem; font-weight: 650; }
+    input, textarea, button { font: inherit; }
+    input, textarea { width: 100%; padding: .55rem .65rem; border: 1px solid #a9baad; border-radius: .45rem; color: inherit; background: #fff; }
+    textarea { resize: vertical; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .85rem; }
+    button { padding: .42rem .75rem; border: 1px solid #b9cbbf; border-radius: .45rem; background: #fff; color: #214d3e; cursor: pointer; font-weight: 650; }
+    button:hover:not(:disabled) { background: #eef5ef; }
+    button.primary { background: #226148; border-color: #226148; color: #fff; }
+    button.primary:hover:not(:disabled) { background: #194e39; }
+    button.danger { color: #9a3029; }
+    button:disabled { opacity: .55; cursor: wait; }
+    :focus-visible { outline: 3px solid #34775b; outline-offset: 2px; }
+    #status { color: #215c46; margin-top: .75rem; }
+    #status.error { color: #9a3029; }
+    .editor { position: sticky; top: 1rem; }
+    @media (max-width: 45rem) {
+      .layout { grid-template-columns: 1fr; }
+      .editor { grid-row: 1; position: static; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="label">TP Node.js · API REST</p>
+      <h1>Journal des posts</h1>
+      <p>Consultez, ajoutez et modifiez vos publications.</p>
+    </div>
+  </header>
+  <main class="wrap layout">
+    <section aria-labelledby="list-heading">
+      <div class="panel">
+        <div class="toolbar">
+          <h2 id="list-heading">Publications</h2>
+          <p id="count" class="muted"></p>
+        </div>
+        <label for="search">Rechercher par titre, contenu ou identifiant</label>
+        <input type="search" id="search" placeholder="Ex. : 12">
+        <p id="status" role="status" aria-live="polite"></p>
+      </div>
+      <div id="posts"></div>
+    </section>
+    <section class="panel editor" aria-labelledby="form-heading">
+      <h2 id="form-heading">Nouveau post</h2>
+      <form id="post-form">
+        <label for="user-id">Identifiant de l’auteur</label>
+        <input id="user-id" type="number" min="1" step="1" value="1" required>
+        <label for="title">Titre</label>
+        <input id="title" type="text" required>
+        <label for="body">Contenu</label>
+        <textarea id="body" rows="5" required></textarea>
+        <div class="actions">
+          <button id="submit" class="primary" type="submit">Publier</button>
+          <button id="cancel" type="button" hidden>Annuler</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const api = location.protocol === 'file:' ? 'http://localhost:3000/api/posts' : '/api/posts';
+    const list = document.querySelector('#posts');
+    const count = document.querySelector('#count');
+    const search = document.querySelector('#search');
+    const status = document.querySelector('#status');
+    const form = document.querySelector('#post-form');
+    const formHeading = document.querySelector('#form-heading');
+    const userIdInput = document.querySelector('#user-id');
+    const titleInput = document.querySelector('#title');
+    const bodyInput = document.querySelector('#body');
+    const submit = document.querySelector('#submit');
+    const cancel = document.querySelector('#cancel');
+
+    let posts = [];
+    let editingId = null;
+    let busy = false;
+
+    function announce(message, error = false) {
+      status.textContent = message;
+      status.classList.toggle('error', error);
+    }
+
+    async function request(method, id = null, data) {
+      const options = { method, cache: 'no-store' };
+      if (data !== undefined) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify(data);
+      }
+      const url = id === null ? api : `${api}/${id}`;
+      const response = await fetch(url, options);
+      if (response.status === 204) return null;
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `Erreur HTTP ${response.status}`);
+      return result;
+    }
+
+    function setBusy(value) {
+      busy = value;
+      for (const control of [...form.elements, ...list.querySelectorAll('button')]) {
+        control.disabled = value;
+      }
+    }
+
+    function fillForm(post = null) {
+      editingId = post ? post.id : null;
+      formHeading.textContent = post ? `Modifier le post #${post.id}` : 'Nouveau post';
+      userIdInput.value = post ? post.userId : 1;
+      titleInput.value = post ? post.title : '';
+      bodyInput.value = post ? post.body : '';
+      submit.textContent = post ? 'Enregistrer' : 'Publier';
+      cancel.hidden = !post;
+    }
+
+    function element(tag, text, className) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      node.textContent = text;
+      return node;
+    }
+
+    function render() {
+      const query = search.value.trim().toLowerCase();
+      const visiblePosts = posts.filter((post) => (
+        !query || String(post.id) === query || `${post.title}\n${post.body}`.toLowerCase().includes(query)
+      ));
+      const total = `${posts.length} publication${posts.length === 1 ? '' : 's'}`;
+      count.textContent = query ? `${visiblePosts.length} sur ${total}` : total;
+      const cards = document.createDocumentFragment();
+
+      for (const post of visiblePosts) {
+        const card = document.createElement('article');
+        const actions = element('div', '', 'actions');
+        const edit = element('button', 'Modifier');
+        const remove = element('button', 'Supprimer', 'danger');
+        edit.disabled = remove.disabled = busy;
+        edit.addEventListener('click', () => editPost(post.id));
+        remove.addEventListener('click', () => removePost(post.id));
+        actions.append(edit, remove);
+        card.append(
+          element('p', `#${post.id} · Auteur ${post.userId}`, 'meta'),
+          element('h3', post.title),
+          element('p', post.body, 'post-body'),
+          actions
+        );
+        cards.append(card);
+      }
+
+      if (!visiblePosts.length) {
+        cards.append(element('p', query ? 'Aucun résultat.' : 'Aucune publication pour le moment.', 'panel'));
+      }
+      list.replaceChildren(cards);
+    }
+
+    async function loadPosts() {
+      posts = (await request('GET')).sort((a, b) => b.id - a.id);
+      render();
+    }
+
+    async function editPost(id) {
+      setBusy(true);
+      try {
+        fillForm(await request('GET', id));
+        announce('');
+      } catch (error) {
+        announce(error.message, true);
+      } finally {
+        setBusy(false);
+      }
+      if (editingId === id) titleInput.focus();
+    }
+
+    async function removePost(id) {
+      if (!window.confirm(`Supprimer le post #${id} ?`)) return;
+      setBusy(true);
+      try {
+        await request('DELETE', id);
+        if (editingId === id) fillForm();
+        posts = posts.filter((post) => post.id !== id);
+        render();
+        announce(`Post #${id} supprimé.`);
+      } catch (error) {
+        announce(error.message, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (busy) return;
+      const data = { userId: Number(userIdInput.value), title: titleInput.value, body: bodyInput.value };
+      const isNew = editingId === null;
+      setBusy(true);
+      try {
+        const saved = await request(isNew ? 'POST' : 'PUT', editingId, data);
+        posts = isNew ? [saved, ...posts] : posts.map((post) => post.id === saved.id ? saved : post);
+        fillForm();
+        search.value = '';
+        render();
+        announce(`Post #${saved.id} ${isNew ? 'publié' : 'modifié'}.`);
+      } catch (error) {
+        announce(error.message, true);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    cancel.addEventListener('click', () => fillForm());
+    search.addEventListener('input', render);
+    setBusy(true);
+    announce('Chargement des publications…');
+    loadPosts()
+      .then(() => announce(''))
+      .catch((error) => announce(`Impossible de charger les publications : ${error.message}`, true))
+      .finally(() => setBusy(false));
+  </script>
+</body>
+</html>

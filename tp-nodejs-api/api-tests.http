@@ -1,0 +1,40 @@
+@baseUrl = http://localhost:3000
+
+### Obtenir tous les posts — 200
+GET {{baseUrl}}/api/posts
+
+### Obtenir un post spécifique — 200
+GET {{baseUrl}}/api/posts/1
+
+### Créer un post — 201 (envoyer avant les deux requêtes suivantes)
+# @name createPost
+POST {{baseUrl}}/api/posts
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "title": "Mon nouveau post",
+  "body": "Ceci est le contenu de mon nouveau post créé via l’API."
+}
+
+### Mettre à jour le post créé — 200
+PUT {{baseUrl}}/api/posts/{{createPost.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "userId": 1,
+  "title": "Post modifié",
+  "body": "Le contenu a été mis à jour."
+}
+
+### Supprimer le post créé — 204
+DELETE {{baseUrl}}/api/posts/{{createPost.response.body.$.id}}
+
+### Vérifier que le post a disparu — 404
+GET {{baseUrl}}/api/posts/{{createPost.response.body.$.id}}
+
+### Vérifier la validation du JSON — 400
+POST {{baseUrl}}/api/posts
+Content-Type: application/json
+
+{"userId": 1,

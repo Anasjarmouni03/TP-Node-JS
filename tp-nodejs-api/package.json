@@ -1,0 +1,15 @@
+{
+  "name": "tp-nodejs-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TP Node.js : API REST de gestion des posts",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "seed": "node seed.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}
